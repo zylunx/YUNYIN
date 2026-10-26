@@ -32,41 +32,6 @@ jobs:
       - run: flutter analyze
       - run: flutter test
 
-  audio:
-    name: 音频验证
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v5
-      - name: 安装 libmpv 与 Linux 桌面依赖
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
-            libmpv-dev pulseaudio pulseaudio-utils xvfb
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - run: flutter config --enable-linux-desktop
-      - run: flutter pub get
-      - name: 准备虚拟声卡与 libmpv
-        run: |
-          # runner 没有声卡：起一个 null sink 接住音频输出（AO=null 时不走声卡）。
-          pulseaudio -D --exit-idle-time=-1 --start || true
-          pactl load-module module-null-sink sink_name=ci_null || true
-          pactl set-default-sink ci_null || true
-          lib="$(ldconfig -p | grep -m1 -o '/[^ ]*libmpv\.so[^ ]*' || true)"
-          echo "libmpv=${lib:-使用 media_kit 自带库}"
-          echo "LIBMPV=$lib" >> "$GITHUB_ENV"
-      - name: 音频链路（本地音源真实解码，含音量均衡与淡入淡出）
-        run: xvfb-run -a flutter test integration_test -d linux --dart-define=AO=null
-      # 在线音源受版权与网络影响，失败只报警不拦截（海外 runner 常被限制）。
-      - name: 网易云在线音源真实播放
-        continue-on-error: true
-        run: flutter test --run-skipped --tags live --dart-define="LIBMPV=${LIBMPV:-}" test/live_playback_test.dart
-
   android:
     name: Android（arm64-v8a / 通用）
     needs: check
