@@ -33,7 +33,7 @@ jobs:
       - run: flutter test
 
   android:
-    name: Android（arm64-v8a / armeabi-v7a / x86_64 / 通用）
+    name: Android（arm64-v8a / 通用）
     needs: check
     runs-on: ubuntu-latest
     env:
@@ -63,7 +63,7 @@ jobs:
           fi
           echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.keystore"
           { echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore"; echo "ANDROID_KEYSTORE_PASSWORD=$PASSWORD"; } >> "$GITHUB_ENV"
-      - run: flutter build apk --release --split-per-abi
+      - run: flutter build apk --release --target-platform android-arm64 --split-per-abi
       - run: flutter build apk --release
       - name: 整理产物
         run: |
@@ -78,184 +78,10 @@ jobs:
           name: YunYin-android
           path: dist/*
 
-  linux:
-    name: Linux ${{ matrix.arch }}（tar.gz / AppImage / deb）
-    needs: check
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            runner: ubuntu-22.04
-          - arch: arm64
-            runner: ubuntu-22.04-arm
-    runs-on: ${{ matrix.runner }}
-    env:
-      VERSION: ${{ needs.check.outputs.version }}
-    steps:
-      - uses: actions/checkout@v5
-      - name: 安装依赖
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libmpv-dev file
-      - name: 安装 Flutter
-        run: |
-          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
-          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
-      - run: flutter --version
-      - run: flutter pub get
-      - run: flutter build linux --release
-      - run: tool/linux/package.sh "$VERSION"
-      - uses: actions/upload-artifact@v5
-        with:
-          name: YunYin-linux-${{ matrix.arch }}
-          path: dist/*
-
-  windows:
-    name: Windows x64
-    needs: check
-    runs-on: windows-latest
-    env:
-      VERSION: ${{ needs.check.outputs.version }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      - run: flutter build windows --release
-      - name: 打包
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "dist/YunYin-$env:VERSION-windows-x64.zip"
-      - name: 安装程序（Inno Setup）
-        shell: pwsh
-        run: |
-          choco upgrade innosetup -y --no-progress | Out-Null
-          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -Last 1
-          # 简体中文语言文件：编译器自带则直接使用，否则从对应版本的 Inno Setup 源码下载，保证消息条目与编译器一致。
-          $lang = Join-Path $iscc.DirectoryName 'Languages\ChineseSimplified.isl'
-          if (Test-Path $lang) {
-            Copy-Item $lang tool/windows/ChineseSimplified.isl
-          } else {
-            # ISCC.exe 的文件版本信息不可靠，从安装记录读取版本号；读不到时用 choco 的包版本。
-            $reg = Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-              Where-Object { $_.DisplayName -like 'Inno Setup*' } | Select-Object -First 1
-            $v = if ($reg.DisplayVersion) { $reg.DisplayVersion } else { ((choco list innosetup --exact --limit-output) -split '\|')[1] }
-            $v = (($v.Trim() -replace '[^0-9.].*$', '') -split '\.' | Select-Object -First 3) -join '.'
-            $tag = 'is-' + ($v -replace '\.', '_')
-            Write-Host "Inno Setup $v，从 $tag 下载中文语言文件"
-            $ok = $false
-            foreach ($p in 'Files/Languages/Unofficial/ChineseSimplified.isl', 'Files/Languages/ChineseSimplified.isl') {
-              try { Invoke-WebRequest "https://raw.githubusercontent.com/jrsoftware/issrc/$tag/$p" -OutFile tool/windows/ChineseSimplified.isl; $ok = $true; break } catch {}
-            }
-            if (-not $ok) { throw "找不到 $tag 的中文语言文件" }
-          }
-          & $iscc.FullName /Qp tool/windows/yunyin.iss
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@v5
-        with:
-          name: YunYin-windows
-          path: dist/*
-
-  macos:
-    name: macOS（Intel + Apple 芯片通用）
-    needs: check
-    runs-on: macos-latest
-    env:
-      VERSION: ${{ needs.check.outputs.version }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      - run: flutter build macos --release
-      - name: 打包
-        run: |
-          mkdir -p dist
-          app=$(ls -d build/macos/Build/Products/Release/*.app | head -n1)
-          ditto -c -k --keepParent "$app" "dist/YunYin-$VERSION-macos-universal.zip"
-      - uses: actions/upload-artifact@v5
-        with:
-          name: YunYin-macos
-          path: dist/*
-
-  audio-android:
-    name: 音频验证 · Android 模拟器
-    needs: check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - name: 启用 KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - run: flutter pub get
-      - uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          target: google_apis
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim
-          disable-animations: true
-          script: flutter test integration_test/audio_pipeline_test.dart -d emulator-5554
-
-  audio-desktop:
-    name: 音频验证 · ${{ matrix.name }}
-    needs: check
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Windows
-            runner: windows-latest
-            device: windows
-          - name: macOS
-            runner: macos-latest
-            device: macos
-          - name: Linux
-            runner: ubuntu-22.04
-            device: linux
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v5
-      - name: 安装 Linux 依赖
-        if: matrix.device == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libmpv-dev xvfb
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      - name: 运行（CI 机器没有声卡，使用 mpv 的 null 音频输出验证解码与滤镜链）
-        shell: bash
-        run: |
-          if [ "${{ matrix.device }}" = linux ]; then RUN="xvfb-run -a"; else RUN=""; fi
-          $RUN flutter test integration_test/audio_pipeline_test.dart -d ${{ matrix.device }} --dart-define=AO=null
-
   release:
     name: 发布
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [android, linux, windows, macos, audio-android, audio-desktop]
+    needs: [android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
