@@ -89,7 +89,9 @@ class LxSourceManager extends ChangeNotifier {
         debugPrint('lx load ${e.id} failed: $err');
         e.enabled = false;
       }
-      e.defs.keys.forEach((p) => _platformSources.putIfAbsent(p, () => []).add(e.id));
+      for (final p in e.defs.keys) {
+        _platformSources.putIfAbsent(p, () => []).add(e.id);
+      }
     }
   }
 
@@ -107,9 +109,11 @@ class LxSourceManager extends ChangeNotifier {
     try {
       await rt.load();
     } catch (err) {
-      debugPrint('lx import ${id} failed: $err');
+      debugPrint('lx import $id failed: $err');
     }
-    entry.defs.keys.forEach((p) => _platformSources.putIfAbsent(p, () => []).add(id));
+    for (final p in entry.defs.keys) {
+      _platformSources.putIfAbsent(p, () => []).add(id);
+    }
     entries.add(entry);
     await _persist();
     notifyListeners();
@@ -147,7 +151,9 @@ class LxSourceManager extends ChangeNotifier {
     final file = path.split(RegExp(r'[\\/]')).last;
     final base = RegExp(r'[A-Za-z0-9_]+').stringMatch(file) ?? 'source';
     var id = base, i = 1;
-    while (_byId(id) != null) id = '$base$i';
+    while (_byId(id) != null) {
+      id = '$base${i++}';
+    }
     return id;
   }
 

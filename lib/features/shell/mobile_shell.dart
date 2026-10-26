@@ -285,7 +285,7 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
               children: [
                 AnimatedBuilder(
                   animation: _a,
-                  builder: (_, __) => Transform.scale(scale: _scale, child: YIcon(widget.icon, size: 22, color: color)),
+                  builder: (_, _) => Transform.scale(scale: _scale, child: YIcon(widget.icon, size: 22, color: color)),
                 ),
                 const SizedBox(height: 3),
                 Text(

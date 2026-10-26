@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import '../../lyrics.dart';
 import '../../models.dart';
 import '../music_source.dart';

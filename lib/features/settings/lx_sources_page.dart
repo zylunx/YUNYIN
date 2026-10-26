@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/settings.dart';
 import '../../data/sources/lx/lx_engine.dart';
 import '../../data/sources/source_manager.dart';
+import '../common/actions.dart';
 import '../shell/nav.dart';
 
 /// LX 音源管理：导入 / 启用 / 删除 LX 音乐源 JS 文件。
@@ -39,13 +40,13 @@ class _LxSourcesPageState extends State<LxSourcesPage> {
   }
 
   Future<void> _import() async {
-    final res = await FilePicker.platform.pickFiles(
+    // file_picker 12 起 FilePicker.platform 已移除，直接用静态方法。
+    final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['js'],
-      withData: false,
     );
-    if (res == null || res.files.isEmpty) return;
-    final path = res.files.single.path;
+    if (file == null) return;
+    final path = file.path;
     if (path == null || _manager == null) return;
     try {
       final entry = await _manager!.importSource(path);

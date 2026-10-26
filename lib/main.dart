@@ -19,6 +19,9 @@ import 'data/downloads.dart';
 import 'data/local_library.dart';
 import 'data/sources/lx/lx_engine.dart';
 import 'data/sources/source_manager.dart';
+import 'features/desktop/window_controls.dart';
+import 'player/player_controller.dart';
+import 'player/system_media.dart';
 
 /// 当前运行平台的字符串，供 LX 源拼接 User-Agent / 选择通道。
 String _lxPlatform() {
@@ -38,9 +41,6 @@ String _lxPlatform() {
       return 'unknown';
   }
 }
-import 'features/desktop/window_controls.dart';
-import 'player/player_controller.dart';
-import 'player/system_media.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

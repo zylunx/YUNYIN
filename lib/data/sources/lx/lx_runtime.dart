@@ -55,9 +55,10 @@ class LxRuntime {
     rt.onMessage('lx_request', _onHttpRequest);
     rt.onMessage('lx_send', _onSend);
     rt.onMessage('lx_result', _onResult);
-    await rt.evaluate(_preamble);
-    await rt.evaluate("globalThis.lx.env = { platform: '$platform' };");
-    await rt.evaluate(code, sourceUrl: '$id.js');
+    // flutter_js 的 evaluate 是同步的（返回 JsEvalResult），不需要 await。
+    rt.evaluate(_preamble);
+    rt.evaluate("globalThis.lx.env = { platform: '$platform' };");
+    rt.evaluate(code, sourceUrl: '$id.js');
     // 等待源上报 inited；超时也继续（个别源可能不报，但多数会）。
     try {
       definition = await _inited.future.timeout(const Duration(seconds: 5));
@@ -119,10 +120,10 @@ class LxRuntime {
         'body': body,
         'headers': respHeaders,
       });
-      await _rt?.evaluate('__lxResolve($rid, null, $payload)');
+      _rt?.evaluate('__lxResolve($rid, null, $payload)');
     } catch (e) {
       final err = jsonEncode({'message': e.toString()});
-      await _rt?.evaluate('__lxResolve($rid, $err, null)');
+      _rt?.evaluate('__lxResolve($rid, $err, null)');
     }
   }
 

@@ -149,7 +149,7 @@ class _LxSearchPageState extends State<LxSearchPage> {
     return ListView.separated(
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: _songs.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final song = _songs[i];
         return ListTile(
@@ -180,7 +180,7 @@ class _Cover extends StatelessWidget {
         width: 44,
         height: 44,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const SizedBox(width: 44, height: 44, child: Icon(Icons.music_note)),
+        errorBuilder: (_, _, _) => const SizedBox(width: 44, height: 44, child: Icon(Icons.music_note)),
       ),
     );
   }
