@@ -24,6 +24,18 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// media_kit_libs_android_audio 等插件在自己的 buildscript 里固定了旧版 AGP（8.13.0），
+// 与主工程使用的 AGP 9.1.0 混用时，Gradle 9 下该模块的 android.jar 不会进入编译
+// classpath（报 "package android.net does not exist"）。这里把子项目 buildscript 里的
+// AGP 统一强制解析到主工程的版本。
+subprojects {
+    buildscript {
+        configurations.all {
+            resolutionStrategy.force("com.android.tools.build:gradle:9.1.0")
+        }
+    }
+}
+
 // 统一 JVM 目标：第三方插件（如 flutter_js）自带的 Java 目标与 Kotlin 默认值不一致时，
 // Gradle 会报 "Inconsistent JVM-target compatibility" 并中断构建。
 // 放在 projectsEvaluated 之后：此时各模块自己的脚本已执行完，不会被插件的旧值覆盖；
