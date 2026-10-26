@@ -8,9 +8,11 @@ import '../library/collections_page.dart';
 import '../library/library_page.dart';
 import '../login/login_page.dart';
 import '../playlist/playlist_page.dart';
+import '../search/lx_search_page.dart';
 import '../search/search_page.dart';
 import '../search/search_result_page.dart';
 import '../settings/appearance_page.dart';
+import '../settings/lx_sources_page.dart';
 import '../settings/settings_more_page.dart';
 import '../settings/settings_page.dart';
 import '../stats/stats_page.dart';
@@ -28,6 +30,8 @@ Widget buildMobileRoute(AppRoute r) => switch (r) {
   SettingsRoute() => const SettingsPage(),
   SettingsMoreRoute() => const SettingsMorePage(),
   AppearanceRoute() => const AppearancePage(),
+  LxSourcesRoute() => const LxSourcesPage(),
+  LxSearchRoute() => const LxSearchPage(),
   StatsRoute() => const StatsPage(),
   LoginRoute() => const LoginPage(),
 };

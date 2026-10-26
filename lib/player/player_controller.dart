@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/settings.dart';
 import '../data/models.dart';
+import '../data/sources/lx/lx_source.dart';
 import '../data/sources/music_source.dart';
 import '../data/sources/source_manager.dart';
 
@@ -50,6 +51,33 @@ class PlayerController extends ChangeNotifier {
   Lyrics lyrics = Lyrics.empty;
   final Set<String> _liked = {};
   final List<Song> history = [];
+
+  /// 音源覆盖：歌曲 key -> LX 平台（如 'wy'）；缺失或 'native' 表示用原平台。
+  final Map<String, String> _audioOverrides = {};
+
+  /// 当前歌曲正在使用的音源平台（'native' = 官方源），供界面展示与切换。
+  String audioSourceOf(Song song) => _audioOverrides[song.key] ?? 'native';
+
+  /// 可切换到的 LX 平台列表（平台标识 -> 中文名）。
+  Map<String, String> get lxPlatforms => sources.lxSource?.manager.platformNames ?? {};
+
+  /// 切换当前歌曲的解析音源；platform='native' 还原为官方源。切换后无缝重载播放地址。
+  Future<void> switchAudioSource(String platform) async {
+    final song = current;
+    if (song == null) return;
+    if (platform == 'native') {
+      _audioOverrides.remove(song.key);
+    } else {
+      _audioOverrides[song.key] = platform;
+    }
+    await reloadCurrent();
+  }
+
+  /// 重新加载当前歌曲（保留播放进度）。
+  Future<void> reloadCurrent() async {
+    if (_index < 0) return;
+    await _load(autoplay: playing, keepPosition: true);
+  }
 
   final StreamController<PlayerNotice> _notices = StreamController.broadcast();
   Stream<PlayerNotice> get notices => _notices.stream;
@@ -417,23 +445,54 @@ class PlayerController extends ChangeNotifier {
     _addHistory(song);
     notifyListeners();
 
-    final source = sources.byId(song.sourceId);
-    _loadLyrics(source, song, token);
+    // 音源覆盖：把歌曲临时标记为 lx:<platform>，让 SourceManager 路由到 LX 引擎。
+    final override = _audioOverrides[song.key];
+    Song resolveSong = song;
+    if (override != null && override != 'native') {
+      resolveSong = Song(
+        id: song.id,
+        sourceId: 'lx:$override',
+        name: song.name,
+        artists: song.artists,
+        album: song.album,
+        duration: song.duration,
+        cover: song.cover,
+        playable: song.playable,
+        alias: song.alias,
+      );
+    }
+
+    final source = sources.byId(resolveSong.sourceId);
+    _loadLyrics(source, resolveSong, token);
 
     StreamInfo info;
     try {
-      final local = song.localPath ?? localLookup?.call(song)?.localPath;
+      final local = resolveSong.localPath ?? localLookup?.call(resolveSong)?.localPath;
       if (local != null) {
         info = StreamInfo(url: local);
       } else {
-        info = await source.stream(song, settings.quality);
+        info = await source.stream(resolveSong, settings.quality);
       }
     } catch (e) {
       if (token != _loadToken) return;
-      buffering = false;
-      notifyListeners();
-      _notices.add(PlayerNotice('播放失败', message: e.toString()));
-      return;
+      // 官方网易云失败时，若开启 LX 兜底，用同一首歌在网易云平台再解析一次。
+      StreamInfo? fallback;
+      final lx = sources.lxSource;
+      if (override == null && song.sourceId == 'netease' && settings.lxFallback && lx != null) {
+        try {
+          final url = await lx.manager.resolveUrl('wy', LxSource.musicInfoOf(song), LxSource.qualityOf(settings.quality));
+          if (url != null) fallback = StreamInfo(url: url, quality: settings.quality);
+        } catch (err) {
+          debugPrint('lx fallback failed: $err');
+        }
+      }
+      if (fallback == null) {
+        buffering = false;
+        notifyListeners();
+        _notices.add(PlayerNotice('播放失败', message: e.toString()));
+        return;
+      }
+      info = fallback;
     }
     if (token != _loadToken) return;
 

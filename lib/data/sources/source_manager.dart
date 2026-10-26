@@ -4,12 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../local_library.dart';
 import 'local/local_source.dart';
+import 'lx/lx_engine.dart';
+import 'lx/lx_source.dart';
 import 'music_source.dart';
 import 'netease/netease_source.dart';
 
 /// 已注册的播放源。新增平台：实现 [MusicSource] 并加入 [SourceRegistry.create]。
 abstract final class SourceRegistry {
-  static List<MusicSource> create(LocalLibrary library) => [NeteaseSource(), LocalSource(library)];
+  static List<MusicSource> create(LocalLibrary library, LxSourceManager lx) =>
+      [NeteaseSource(), LocalSource(library), LxSource(lx)];
 }
 
 /// 管理当前播放源，并负责按 [Song.sourceId] 找回对应的源。
@@ -45,7 +48,17 @@ class SourceManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  MusicSource byId(String id) => sources.firstWhere((s) => s.id == id, orElse: () => _current);
+  MusicSource byId(String id) {
+    // LX 引擎统一以 'lx'（或 'lx:<platform>'）承载，所有 LX 解析都路由到同一实例。
+    if (id.startsWith('lx')) {
+      return sources.firstWhere((s) => s.id == LxSource.sourceId, orElse: () => _current);
+    }
+    return sources.firstWhere((s) => s.id == id, orElse: () => _current);
+  }
+
+  /// 便捷获取 LX 源实例（可能尚未注册时返回 null）。
+  LxSource? get lxSource =>
+      sources.whereType<LxSource>().firstOrNull;
 
   Future<void> select(String id) async {
     if (id == _current.id) return;

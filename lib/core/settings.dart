@@ -74,6 +74,9 @@ class AppSettings extends ChangeNotifier {
 
   /// 歌词字号倍数（0.85 / 1.0 / 1.15）。
   double lyricScale = 1.0;
+
+  /// 网易云官方播放失败时，自动用 LX 音源（网易云平台）兜底。
+  bool lxFallback = false;
   String? downloadDir;
   double volume = 0.65;
   List<String> searchHistory = [];
@@ -106,6 +109,7 @@ class AppSettings extends ChangeNotifier {
     if (background == BackgroundMode.image && backgroundImage == null) background = BackgroundMode.glow;
     skippedUpdate = _p.getString('skippedUpdate');
     lyricScale = _p.getDouble('lyricScale') ?? 1.0;
+    lxFallback = _p.getBool('lxFallback') ?? false;
     downloadDir = _p.getString('downloadDir');
     volume = _p.getDouble('volume') ?? 0.65;
     searchHistory = _p.getStringList('searchHistory') ?? [];
@@ -157,6 +161,8 @@ class AppSettings extends ChangeNotifier {
         iconFollowsAccent = v;
       case 'coverColors':
         coverColors = v;
+      case 'lxFallback':
+        lxFallback = v;
       case 'autoUpdate':
         autoUpdate = v;
       case 'backgroundBlur':

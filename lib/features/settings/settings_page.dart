@@ -290,9 +290,14 @@ class SourceGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sm = context.watch<SourceManager>();
+    final lx = sm.lxSource?.manager;
+    final lxValue = lx == null || lx.entries.isEmpty ? '未导入' : '${lx.entries.length} 个音源';
     return CardList(
       indent: 56,
-      children: [SettingsRow(icon: YIcons.source, tile: TileColor.red, title: '播放源', value: sm.current.name, onTap: () => pickSource(context))],
+      children: [
+        SettingsRow(icon: YIcons.source, tile: TileColor.red, title: '播放源', value: sm.current.name, onTap: () => pickSource(context)),
+        SettingsRow(icon: YIcons.source, tile: TileColor.teal, title: 'LX 音源', value: lxValue, onTap: () => go(context, LxSourcesRoute())),
+      ],
     );
   }
 }

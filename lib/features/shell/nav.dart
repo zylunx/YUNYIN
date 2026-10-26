@@ -132,6 +132,24 @@ class SettingsMoreRoute extends AppRoute {
   String get sideKey => 'settings';
 }
 
+/// LX 跨平台搜索（设置的二级页面）。
+class LxSearchRoute extends AppRoute {
+  @override
+  Chrome get chrome => Chrome.navOnly;
+
+  @override
+  String get sideKey => 'settings';
+}
+
+/// LX 音源管理（设置的二级页面）。
+class LxSourcesRoute extends AppRoute {
+  @override
+  Chrome get chrome => Chrome.navOnly;
+
+  @override
+  String get sideKey => 'settings';
+}
+
 /// 外观（设置的二级页面）。
 class AppearanceRoute extends AppRoute {
   @override

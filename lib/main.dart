@@ -17,7 +17,27 @@ import 'debug/benchmark.dart';
 import 'debug/screenshots.dart';
 import 'data/downloads.dart';
 import 'data/local_library.dart';
+import 'data/sources/lx/lx_engine.dart';
 import 'data/sources/source_manager.dart';
+
+/// 当前运行平台的字符串，供 LX 源拼接 User-Agent / 选择通道。
+String _lxPlatform() {
+  if (kIsWeb) return 'windows';
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+      return 'android';
+    case TargetPlatform.iOS:
+      return 'ios';
+    case TargetPlatform.windows:
+      return 'windows';
+    case TargetPlatform.macOS:
+      return 'macos';
+    case TargetPlatform.linux:
+      return 'linux';
+    default:
+      return 'unknown';
+  }
+}
 import 'features/desktop/window_controls.dart';
 import 'player/player_controller.dart';
 import 'player/system_media.dart';
@@ -60,7 +80,9 @@ Future<void> main() async {
   await settings.init();
   final local = LocalLibrary();
   await local.init();
-  final sources = SourceManager(SourceRegistry.create(local));
+  final lx = LxSourceManager(_lxPlatform());
+  await lx.init();
+  final sources = SourceManager(SourceRegistry.create(local, lx));
   // 本地歌曲联网补全封面与歌词使用网易云。
   local.online = sources.sources.where((s) => s.id == 'netease').firstOrNull;
   await sources.init();
