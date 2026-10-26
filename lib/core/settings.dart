@@ -9,7 +9,7 @@ enum GlassMaterial {
   /// 清透：几乎不模糊，没有色调。
   clear('清透'),
 
-  /// 柔和：轻度模糊并叠加白色色调。
+  /// 柔和：较强模糊，不再叠加白色色调（可读性由模糊承担）。
   regular('柔和');
 
   const GlassMaterial(this.label);

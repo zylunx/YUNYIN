@@ -82,7 +82,7 @@ class AppearancePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      s.glassMaterial == GlassMaterial.clear ? '清透：几乎不模糊，边缘折射与高光最明显。' : '柔和：轻度模糊并带一层白色色调，文字更易阅读。',
+                      s.glassMaterial == GlassMaterial.clear ? '清透：几乎不模糊，边缘折射与高光最明显。' : '柔和：更强模糊，去掉白色底，下方有图或文字时依然清晰。',
                       style: ts(13, height: 1.45, color: p.text2),
                     ),
                   ],

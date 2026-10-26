@@ -29,6 +29,9 @@ abstract final class LiquidGlassShader {
 /// 「清透」只有一层着色器滤镜，直接读取当前画面；「柔和」先做一层模糊（同一画面中的多块玻璃通过
 /// [BackdropGroup] 共用一次背景截取与模糊），再由着色器读取模糊结果。着色器按输入纹理尺寸判断
 /// 坐标系，因此需要玻璃在画面中的位置：每次绘制时写入，位置因祖先变换变化时下一帧补绘。
+///
+/// 「柔和」不再叠加白色色调（白色底在多块玻璃共享背景截取时会超出玻璃自身范围），
+/// 可读性改由更强的模糊承担；模糊仍共用同一次背景截取，避免每块玻璃各截一次。
 class LiquidGlassBackdrop extends SingleChildRenderObjectWidget {
   const LiquidGlassBackdrop({super.key, required this.radius, required this.material, super.child});
 
@@ -132,7 +135,7 @@ class RenderLiquidGlass extends RenderProxyBox {
     f(1); // 折射强度 100%
     f(7); // 色散
     f(0.9); // 边缘高光 90%
-    f(regular ? 0.11 : 0); // 色调
+    f(0); // 色调：两种材质都不再叠白色底，柔和的可读性靠更强的模糊
     // 圆角达到短边一半（圆形、胶囊）时用正圆弧，否则用原版面板的超椭圆圆角。
     f(_radius >= size.shortestSide / 2 - 0.5 ? 2 : 5);
     f(global.dx * _dpr / _uiScale);
@@ -152,10 +155,11 @@ class RenderLiquidGlass extends RenderProxyBox {
         glass(context, offset);
         return;
       }
-      // 原版「柔和」：半径 16 的高斯模糊（sigma = 16 / 3）。原版以 1 倍屏像素设计，这里按逻辑像素换算。
+      // 「柔和」：去掉白色底后靠模糊保证可读性，模糊半径由原版 16 提到 30（sigma = 30 / 3）。
+      // 原版以 1 倍屏像素设计，这里按逻辑像素换算；clamp 比 mirror / repeated 更省。
       final blur = _blur.layer ??= BackdropFilterLayer();
       blur
-        ..filter = ui.ImageFilter.blur(sigmaX: 16 / 3, sigmaY: 16 / 3, tileMode: TileMode.clamp)
+        ..filter = ui.ImageFilter.blur(sigmaX: 30 / 3, sigmaY: 30 / 3, tileMode: TileMode.clamp)
         ..backdropKey = _backdropKey;
       context.pushLayer(blur, glass, offset);
     }, oldLayer: _clip.layer);

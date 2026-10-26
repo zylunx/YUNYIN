@@ -7,6 +7,8 @@
 //   · 菲涅尔边缘提亮；
 //   · 按法线角度计算的高光（左上与右下最亮），在 LCH 空间提高亮度与彩度；
 //   · 「柔和」材质叠加白色色调（模糊由 Dart 端在滤镜链中先行完成）。
+//     注意：该色调会让整块玻璃偏白，且多块玻璃共享背景截取时容易超出玻璃范围，
+//     现已在宿主侧固定传 0（两种材质均无白色底），可读性改由更强的模糊承担。
 //
 // 与 WebGL 原版的差异只在宿主：输入纹理由 Flutter 背景滤镜提供（模糊已在前一层完成），
 // 坐标为物理像素、y 轴向下，法线用中心差分计算。
@@ -26,7 +28,7 @@ uniform float uThickness;  // 边缘厚度，逻辑像素（原版默认 20）
 uniform float uRefraction; // 折射强度（原版 refraction / 100）
 uniform float uDispersion; // 色散（原版默认 7）
 uniform float uGlare;      // 边缘高光（原版 glare / 100）
-uniform float uTint;       // 白色色调强度（清透 0，柔和 0.11）
+uniform float uTint;       // 白色色调强度（两种材质均传 0；如需微调可读性可在此取值）
 uniform float uRoundness;  // 圆角指数：圆形与胶囊为 2，面板为 5（同原版形状预设）
 uniform vec2 uOrigin;      // 玻璃在画面中的左上角，物理像素
 uniform float uPad;        // 裁剪区域每边多出的物理像素
