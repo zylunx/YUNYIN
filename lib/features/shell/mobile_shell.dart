@@ -46,7 +46,7 @@ class _MobileShellState extends State<MobileShell> {
       child: Stack(
         children: [
           Positioned.fill(
-            child: IndexedStack(
+            child: _TabSlideSwitcher(
               index: nav.tab,
               children: [
                 for (var i = 0; i < 3; i++)
@@ -85,6 +85,105 @@ class _MobileShellState extends State<MobileShell> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Q弹曲线（图标用）：阻尼振荡，过冲约 12%，回弹明显。
+class _QBounce extends Curve {
+  const _QBounce();
+
+  @override
+  double transform(double t) {
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    return (1 - math.pow(math.e, -5.2 * t) * math.cos(7.6 * t)).toDouble();
+  }
+}
+
+/// 页面滑动曲线：同样是阻尼振荡，但过冲只有约 4%，
+/// 避免整页位移过冲过大显得拖沓。
+class _QSlide extends Curve {
+  const _QSlide();
+
+  @override
+  double transform(double t) {
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    return (1 - math.pow(math.e, -6.5 * t) * math.cos(6.2 * t)).toDouble();
+  }
+}
+
+/// 标签页切换：新页从侧边滑入、旧页反向滑出，曲线带回弹。
+///
+/// 三个 Navigator 常驻在树里（不可见的用 [Offstage] 隐藏），保证各自的导航栈状态不丢。
+class _TabSlideSwitcher extends StatefulWidget {
+  const _TabSlideSwitcher({required this.index, required this.children});
+
+  final int index;
+  final List<Widget> children;
+
+  @override
+  State<_TabSlideSwitcher> createState() => _TabSlideSwitcherState();
+}
+
+class _TabSlideSwitcherState extends State<_TabSlideSwitcher> with SingleTickerProviderStateMixin {
+  static const _curve = _QSlide();
+
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 460))..value = 1;
+  late int _prev;
+  int _dir = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _prev = widget.index;
+  }
+
+  @override
+  void didUpdateWidget(covariant _TabSlideSwitcher old) {
+    super.didUpdateWidget(old);
+    if (old.index != widget.index) {
+      _dir = widget.index > old.index ? 1 : -1;
+      _prev = old.index;
+      _c.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  double _offsetFor(int i, double width, double t) {
+    if (i == widget.index) return _dir * (1 - t) * width;
+    if (i == _prev && _c.isAnimating) return -_dir * t * width;
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        final t = _curve.transform(_c.value);
+        return Stack(
+          children: [
+            for (var i = 0; i < widget.children.length; i++)
+              Positioned.fill(
+                child: Offstage(
+                  offstage: i != widget.index && !(i == _prev && _c.isAnimating),
+                  child: Transform.translate(
+                    offset: Offset(_offsetFor(i, width, t), 0),
+                    child: widget.children[i],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -134,7 +233,7 @@ class _BottomBar extends StatelessWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   const _NavItem({required this.icon, required this.label, required this.active, required this.onTap});
 
   final YIconData icon;
@@ -143,14 +242,39 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 480));
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: const _QBounce());
+
+  @override
+  void didUpdateWidget(covariant _NavItem old) {
+    super.didUpdateWidget(old);
+    // 选中瞬间回弹一下；取消选中不播动画。
+    if (widget.active && !old.active) _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  /// 静止时保持 1；动画中从 0.7 弹到 1，配合曲线过冲形成“Q弹”手感。
+  double get _scale => (_c.isAnimating || _c.value > 0) ? 0.7 + 0.3 * _a.value : 1.0;
+
+  @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final color = active ? p.accentText : p.text3;
+    final color = widget.active ? p.accentText : p.text3;
+    final active = widget.active;
     return Expanded(
       child: Pressable(
-        onTap: onTap,
+        onTap: widget.onTap,
         scale: 0.96,
-        semanticLabel: label,
+        semanticLabel: widget.label,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
           decoration: BoxDecoration(color: active ? p.navActive : Colors.transparent, borderRadius: BorderRadius.circular(27)),
@@ -159,10 +283,13 @@ class _NavItem extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                YIcon(icon, size: 22, color: color),
+                AnimatedBuilder(
+                  animation: _a,
+                  builder: (_, __) => Transform.scale(scale: _scale, child: YIcon(widget.icon, size: 22, color: color)),
+                ),
                 const SizedBox(height: 3),
                 Text(
-                  label,
+                  widget.label,
                   style: ts(11, weight: active ? w600 : w500, color: color, height: 1.2),
                 ),
               ],
