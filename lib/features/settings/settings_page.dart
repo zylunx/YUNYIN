@@ -42,7 +42,7 @@ class SettingsPage extends StatelessWidget {
         PlaybackGroup(),
         GroupLabel('外观'),
         AppearanceEntry(),
-        GroupLabel('播放源'),
+        GroupLabel('音源'),
         SourceGroup(),
         GroupLabel('下载与缓存'),
         StorageGroup(),
@@ -290,29 +290,13 @@ class SourceGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sm = context.watch<SourceManager>();
-    final lx = sm.lxSource?.manager;
-    final lxValue = lx == null || lx.entries.isEmpty ? '未导入' : '${lx.entries.length} 个音源';
     return CardList(
       indent: 56,
       children: [
-        SettingsRow(icon: YIcons.source, tile: TileColor.red, title: '播放源', value: sm.current.name, onTap: () => pickSource(context)),
-        SettingsRow(icon: YIcons.source, tile: TileColor.teal, title: 'LX 音源', value: lxValue, onTap: () => go(context, LxSourcesRoute())),
+        SettingsRow(icon: YIcons.source, tile: TileColor.red, title: '音源', value: sm.primaryName, onTap: () => go(context, SourcesRoute())),
       ],
     );
   }
-}
-
-Future<void> pickSource(BuildContext context) async {
-  final sm = context.read<SourceManager>();
-  final id = await showOptions<String>(
-    context,
-    title: '选择播放源',
-    selected: sm.current.id,
-    options: [for (final s in sm.selectable) (s.id, '${s.name}  ·  ${s.description}')],
-  );
-  if (id == null || !context.mounted) return;
-  await sm.select(id);
-  if (context.mounted) Toast.show(context, '已切换到${sm.current.name}');
 }
 
 class StorageGroup extends StatefulWidget {
@@ -482,7 +466,7 @@ class _DesktopSettings extends StatelessWidget {
                   const PlaybackGroup(desktop: true),
                   const GroupLabel('外观'),
                   const AppearanceEntry(),
-                  const GroupLabel('账号与播放源'),
+                  const GroupLabel('账号与音源'),
                   const SourceGroup(),
                   const SizedBox(height: 12),
                   const AccountCard(),

@@ -52,26 +52,14 @@ class PlayerController extends ChangeNotifier {
   final Set<String> _liked = {};
   final List<Song> history = [];
 
-  /// 音源覆盖：歌曲 key -> LX 平台（如 'wy'）；缺失或 'native' 表示用原平台。
-  final Map<String, String> _audioOverrides = {};
+  /// 当前选中的主音源（内置源或某个导入的 LX 源），供界面展示与切换。
+  String get primarySourceName => sources.primaryName;
 
-  /// 当前歌曲正在使用的音源平台（'native' = 官方源），供界面展示与切换。
-  String audioSourceOf(Song song) => _audioOverrides[song.key] ?? 'native';
+  /// 可选的音源列表（id -> 显示名）。
+  Map<String, String> get sourceOptions => sources.primaryOptions;
 
-  /// 可切换到的 LX 平台列表（平台标识 -> 中文名）。
-  Map<String, String> get lxPlatforms => sources.lxSource?.manager.platformNames ?? {};
-
-  /// 切换当前歌曲的解析音源；platform='native' 还原为官方源。切换后无缝重载播放地址。
-  Future<void> switchAudioSource(String platform) async {
-    final song = current;
-    if (song == null) return;
-    if (platform == 'native') {
-      _audioOverrides.remove(song.key);
-    } else {
-      _audioOverrides[song.key] = platform;
-    }
-    await reloadCurrent();
-  }
+  /// 切换主音源；之后所有歌曲都优先用该音源解析，当前歌曲立即重新加载。
+  Future<void> switchPrimarySource(String id) => sources.select(id);
 
   /// 重新加载当前歌曲（保留播放进度）。
   Future<void> reloadCurrent() async {
@@ -115,9 +103,19 @@ class PlayerController extends ChangeNotifier {
       debugPrint('player engine unavailable: $e');
     }
     settings.addListener(_applyVolume);
-    sources.addListener(_refreshLikes);
+    sources.addListener(_onSourcesChanged);
+    _primaryWatched = sources.primaryId;
     await _restore();
     _refreshLikes();
+  }
+
+  /// 主音源变化时无缝重载当前歌曲；其他源变化（导入 / 启停）只刷新喜欢状态。
+  String _primaryWatched = '';
+  void _onSourcesChanged() {
+    _refreshLikes();
+    if (sources.primaryId == _primaryWatched) return;
+    _primaryWatched = sources.primaryId;
+    reloadCurrent();
   }
 
   /// Linux 便携包（tar.gz / AppImage）把 libmpv 及其依赖放在可执行文件旁的 lib/mpv 中，优先使用它；
@@ -445,23 +443,8 @@ class PlayerController extends ChangeNotifier {
     _addHistory(song);
     notifyListeners();
 
-    // 音源覆盖：把歌曲临时标记为 lx:<platform>，让 SourceManager 路由到 LX 引擎。
-    final override = _audioOverrides[song.key];
-    Song resolveSong = song;
-    if (override != null && override != 'native') {
-      resolveSong = Song(
-        id: song.id,
-        sourceId: 'lx:$override',
-        name: song.name,
-        artists: song.artists,
-        album: song.album,
-        duration: song.duration,
-        cover: song.cover,
-        playable: song.playable,
-        alias: song.alias,
-      );
-    }
-
+    // 主音源：选中的 LX 源支持该平台时，歌曲会被改写为 lx:<platform>。
+    final resolveSong = sources.songForPlayback(song);
     final source = sources.byId(resolveSong.sourceId);
     _loadLyrics(source, resolveSong, token);
 
@@ -475,17 +458,7 @@ class PlayerController extends ChangeNotifier {
       }
     } catch (e) {
       if (token != _loadToken) return;
-      // 官方网易云失败时，若开启 LX 兜底，用同一首歌在网易云平台再解析一次。
-      StreamInfo? fallback;
-      final lx = sources.lxSource;
-      if (override == null && song.sourceId == 'netease' && settings.lxFallback && lx != null) {
-        try {
-          final url = await lx.manager.resolveUrl('wy', LxSource.musicInfoOf(song), LxSource.qualityOf(settings.quality));
-          if (url != null) fallback = StreamInfo(url: url, quality: settings.quality);
-        } catch (err) {
-          debugPrint('lx fallback failed: $err');
-        }
-      }
+      final fallback = await _fallbackStream(song, resolveSong);
       if (fallback == null) {
         buffering = false;
         notifyListeners();
@@ -501,6 +474,12 @@ class PlayerController extends ChangeNotifier {
       notifyListeners();
       _notices.add(_engineNotice);
       return;
+    }
+    // 主音源解析不到地址时也尝试兜底，避免直接跳过歌曲。
+    if (info.url == null) {
+      final fallback = await _fallbackStream(song, resolveSong);
+      if (token != _loadToken) return;
+      if (fallback?.url != null) info = fallback!;
     }
     if (info.url == null) {
       buffering = false;
@@ -528,6 +507,34 @@ class PlayerController extends ChangeNotifier {
         await p.play();
       }
     }
+  }
+
+  /// 主音源解析失败时的兜底。
+  ///
+  /// - 选了 LX 主音源但歌曲来自网易云：官方源再试一次；
+  /// - 官方源失败且开启“LX 兜底”：用 LX 在网易云平台再解析一次。
+  Future<StreamInfo?> _fallbackStream(Song original, Song resolved) async {
+    if (resolved.sourceId != original.sourceId) {
+      if (original.sourceId == 'netease') {
+        try {
+          final info = await sources.byId(original.sourceId).stream(original, settings.quality);
+          if (info.url != null) return info;
+        } catch (err) {
+          debugPrint('native fallback failed: $err');
+        }
+      }
+      return null;
+    }
+    final lx = sources.lxSource;
+    if (original.sourceId == 'netease' && settings.lxFallback && lx != null) {
+      try {
+        final url = await lx.manager.resolveUrl('wy', LxSource.musicInfoOf(original), LxSource.qualityOf(settings.quality));
+        if (url != null) return StreamInfo(url: url, quality: settings.quality);
+      } catch (err) {
+        debugPrint('lx fallback failed: $err');
+      }
+    }
+    return null;
   }
 
   Future<void> _loadLyrics(MusicSource source, Song song, int token) async {
@@ -600,8 +607,9 @@ class PlayerController extends ChangeNotifier {
         _rebuildOrder();
         if (current != null) {
           duration = current!.duration;
-          final source = sources.byId(current!.sourceId);
-          _loadLyrics(source, current!, _loadToken);
+          final resolved = sources.songForPlayback(current!);
+          final source = sources.byId(resolved.sourceId);
+          _loadLyrics(source, resolved, _loadToken);
         }
       }
     } catch (_) {}
@@ -613,7 +621,7 @@ class PlayerController extends ChangeNotifier {
       s.cancel();
     }
     settings.removeListener(_applyVolume);
-    sources.removeListener(_refreshLikes);
+    sources.removeListener(_onSourcesChanged);
     _sleepTimer?.cancel();
     _player?.dispose();
     _notices.close();

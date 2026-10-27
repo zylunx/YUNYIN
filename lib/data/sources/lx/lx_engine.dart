@@ -27,7 +27,8 @@ class LxSourceEntry {
 
 /// 管理所有 LX 源：加载用户导入的源、登记平台、并按平台分发 musicUrl / lyric / pic。
 ///
-/// 多个源若支持同一平台，则按导入顺序依次尝试，实现“跨源兜底”。
+/// 多个源若支持同一平台，优先用用户选中的主音源，其余按导入顺序依次尝试，
+/// 实现“跨源兜底”。
 /// 源不内置，全部由用户在设置里导入 .js 文件后生效。
 class LxSourceManager extends ChangeNotifier {
   LxSourceManager(this.platform);
@@ -38,7 +39,25 @@ class LxSourceManager extends ChangeNotifier {
   final List<LxSourceEntry> entries = [];
   final Map<String, List<String>> _platformSources = {};
 
+  /// 用户选定的主 LX 源 id。为 null 时按导入顺序分发。
+  String? _primaryId;
+  String? get primaryId => _primaryId;
+
   LxSourceEntry? _byId(String id) => entries.where((e) => e.id == id).firstOrNull;
+
+  /// 按 id 查找已导入的源（供界面与主音源路由使用）。
+  LxSourceEntry? entryById(String id) => _byId(id);
+
+  /// 该源是否声明了平台的某个能力（musicUrl / lyric / pic / musicSearch）。
+  bool entrySupports(String id, String platform, String action) {
+    final e = _byId(id);
+    if (!_usable(e)) return false;
+    final actions = e!.defs[platform]?['actions'];
+    return actions is List && actions.contains(action);
+  }
+
+  /// 该源声明的平台标识列表（用于界面展示）。
+  List<String> platformsOf(String id) => _byId(id)?.defs.keys.toList() ?? const [];
 
   /// 已登记平台 -> 平台中文名（来自各源自报的 inited 事件）。
   Map<String, String> get platformNames {
@@ -66,6 +85,7 @@ class LxSourceManager extends ChangeNotifier {
   Future<void> _loadSaved() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList('lx.userSources') ?? [];
+    final savedPrimary = prefs.getString('lx.primary');
     if (raw.isEmpty) return;
     final base = await _dir();
     for (final item in raw) {
@@ -76,6 +96,7 @@ class LxSourceManager extends ChangeNotifier {
         entries.add(LxSourceEntry(id, (m['name'] as String?) ?? id, (m['enabled'] as bool?) ?? true, code));
       } catch (_) {}
     }
+    if (savedPrimary != null && _byId(savedPrimary)?.enabled == true) _primaryId = savedPrimary;
   }
 
   Future<void> _startAll() async {
@@ -126,6 +147,11 @@ class LxSourceManager extends ChangeNotifier {
     entry.runtime?.dispose();
     entries.removeWhere((e) => e.id == id);
     _platformSources.forEach((p, ids) => ids.remove(id));
+    if (_primaryId == id) {
+      _primaryId = null;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('lx.primary');
+    }
     final base = await _dir();
     final f = File('${base.path}/$id.js');
     if (await f.exists()) await f.delete();
@@ -137,7 +163,25 @@ class LxSourceManager extends ChangeNotifier {
     final entry = _byId(id);
     if (entry == null) return;
     entry.enabled = enabled;
+    if (!enabled && _primaryId == id) {
+      _primaryId = null;
+      SharedPreferences.getInstance().then((p) => p.remove('lx.primary'));
+    }
     _persist();
+    notifyListeners();
+  }
+
+  /// 选择主 LX 源；[id] 为 null 表示取消（由官方源解析）。
+  Future<void> setPrimary(String? id) async {
+    final next = id != null && _byId(id)?.enabled == true ? id : null;
+    if (next == _primaryId) return;
+    _primaryId = next;
+    final prefs = await SharedPreferences.getInstance();
+    if (next == null) {
+      await prefs.remove('lx.primary');
+    } else {
+      await prefs.setString('lx.primary', next);
+    }
     notifyListeners();
   }
 
@@ -157,7 +201,19 @@ class LxSourceManager extends ChangeNotifier {
     return id;
   }
 
-  List<String> _sourcesFor(String platform) => _platformSources[platform] ?? const [];
+  /// 该平台的源顺序：主音源优先，其余按导入顺序兜底。
+  List<String> _sourcesFor(String platform) {
+    final ids = List<String>.from(_platformSources[platform] ?? const <String>[]);
+    final primary = _primaryId;
+    if (primary != null) {
+      final i = ids.indexOf(primary);
+      if (i > 0) {
+        ids.removeAt(i);
+        ids.insert(0, primary);
+      }
+    }
+    return ids;
+  }
 
   /// 原始 musicInfo 缓存。
   ///
@@ -209,6 +265,20 @@ class LxSourceManager extends ChangeNotifier {
       }
     }
     return const [];
+  }
+
+  Future<List<Map<String, dynamic>>> searchEntry(String sourceId, String platform, String keyword, {int limit = 30, int page = 1}) async {
+    final entry = _byId(sourceId);
+    if (!_usable(entry) || !entrySupports(sourceId, platform, 'musicSearch')) return const [];
+    try {
+      final result = await entry!.runtime!.dispatch('musicSearch', platform, {'keyword': keyword, 'limit': limit, 'page': page});
+      final list = result is Map ? (result['list'] as List?) : (result as List?);
+      if (list == null) return const [];
+      return [for (final item in list) Map<String, dynamic>.from(item as Map)];
+    } catch (err) {
+      debugPrint('lx $sourceId search($platform) failed: $err');
+      return const [];
+    }
   }
 
   /// 解析播放地址，返回 null 表示所有源都失败。

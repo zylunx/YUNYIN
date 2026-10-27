@@ -12,6 +12,7 @@ import '../../core/ui/icons.dart';
 import '../../core/ui/text.dart';
 import '../../core/ui/widgets.dart';
 import '../../data/models.dart';
+import '../../data/sources/source_manager.dart';
 import '../../player/player_controller.dart';
 import '../common/actions.dart';
 
@@ -223,7 +224,7 @@ class _TitleRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              _LxSourceChip(song: song),
+              const _PrimarySourceChip(),
             ],
           ),
         ),
@@ -245,22 +246,19 @@ class _TitleRow extends StatelessWidget {
   }
 }
 
-/// 当前歌曲的解析音源；导入过 LX 源后才显示，点击可切换。
-class _LxSourceChip extends StatelessWidget {
-  const _LxSourceChip({required this.song});
-
-  final Song song;
+/// 当前的主音源；导入过 LX 源后显示，点击可切换（对全部歌曲生效）。
+class _PrimarySourceChip extends StatelessWidget {
+  const _PrimarySourceChip();
 
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final player = context.watch<PlayerController>();
-    final platforms = player.lxPlatforms;
-    if (platforms.isEmpty) return const SizedBox.shrink();
-    final current = player.audioSourceOf(song);
-    final label = current == 'native' ? '官方源' : (platforms[current] ?? current);
+    final sm = context.watch<SourceManager>();
+    final options = sm.primaryOptions;
+    if (options.length <= 1) return const SizedBox.shrink();
+    final label = sm.primaryName;
     return Pressable(
-      onTap: () => _pick(context, player),
+      onTap: () => _pick(context, sm),
       scale: 1,
       pressedOpacity: 0.6,
       child: Container(
@@ -269,7 +267,15 @@ class _LxSourceChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('音源 · $label', style: ts(12, weight: w500, color: p.playerText2)),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 180),
+              child: Text(
+                '音源 · $label',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: ts(12, weight: w500, color: p.playerText2),
+              ),
+            ),
             const SizedBox(width: 4),
             const YIcon(YIcons.chevronRight, size: 12, color: Color(0xFF8E8E93)),
           ],
@@ -278,15 +284,15 @@ class _LxSourceChip extends StatelessWidget {
     );
   }
 
-  Future<void> _pick(BuildContext context, PlayerController player) async {
+  Future<void> _pick(BuildContext context, SourceManager sm) async {
     final chosen = await showOptions<String>(
       context,
       title: '选择音源',
-      selected: player.audioSourceOf(song),
-      options: [('native', '官方源'), for (final e in player.lxPlatforms.entries) (e.key, e.value)],
+      selected: sm.primaryId,
+      options: [for (final e in sm.primaryOptions.entries) (e.key, e.value)],
     );
     if (chosen == null || !context.mounted) return;
-    await player.switchAudioSource(chosen);
+    await context.read<PlayerController>().switchPrimarySource(chosen);
   }
 }
 

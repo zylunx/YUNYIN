@@ -12,7 +12,7 @@ import '../search/lx_search_page.dart';
 import '../search/search_page.dart';
 import '../search/search_result_page.dart';
 import '../settings/appearance_page.dart';
-import '../settings/lx_sources_page.dart';
+import '../settings/sources_page.dart';
 import '../settings/settings_more_page.dart';
 import '../settings/settings_page.dart';
 import '../stats/stats_page.dart';
@@ -30,7 +30,7 @@ Widget buildMobileRoute(AppRoute r) => switch (r) {
   SettingsRoute() => const SettingsPage(),
   SettingsMoreRoute() => const SettingsMorePage(),
   AppearanceRoute() => const AppearancePage(),
-  LxSourcesRoute() => const LxSourcesPage(),
+  SourcesRoute() => const SourcesPage(),
   LxSearchRoute() => const LxSearchPage(),
   StatsRoute() => const StatsPage(),
   LoginRoute() => const LoginPage(),

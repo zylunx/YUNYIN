@@ -26,12 +26,13 @@ abstract final class LiquidGlassShader {
 
 /// 在子组件背后用液态玻璃着色器处理背景。
 ///
-/// 「清透」只有一层着色器滤镜，直接读取当前画面；「柔和」先做一层模糊（同一画面中的多块玻璃通过
-/// [BackdropGroup] 共用一次背景截取与模糊），再由着色器读取模糊结果。着色器按输入纹理尺寸判断
-/// 坐标系，因此需要玻璃在画面中的位置：每次绘制时写入，位置因祖先变换变化时下一帧补绘。
+/// 「清透」只有一层着色器滤镜，通过 [BackdropGroup] 与同画面的其他玻璃共用一次背景截取，
+/// 着色器按输入纹理尺寸判断坐标系，因此需要玻璃在画面中的位置：每次绘制时写入，
+/// 位置因祖先变换变化时下一帧补绘。
 ///
-/// 「柔和」不再叠加白色色调（白色底在多块玻璃共享背景截取时会超出玻璃自身范围），
-/// 可读性改由更强的模糊承担；模糊仍共用同一次背景截取，避免每块玻璃各截一次。
+/// 「柔和」不参与共享背景截取：共享纹理属于更外层的那次截取，而玻璃自身图层的
+/// `FlutterFragCoord` 以当前图层为原点，两者坐标系不一致，会在玻璃外多画出一块矩形底色。
+/// 因此把「模糊 + 着色器」合并成一个滤镜，在玻璃自己的图层里截取背景、一次完成。
 class LiquidGlassBackdrop extends SingleChildRenderObjectWidget {
   const LiquidGlassBackdrop({super.key, required this.radius, required this.material, super.child});
 
@@ -60,6 +61,9 @@ class RenderLiquidGlass extends RenderProxyBox {
   /// 裁剪区域比玻璃每边多出的逻辑像素。
   static const _pad = 1.0;
 
+  /// 「柔和」的高斯模糊半径（原版以 1 倍屏像素设计，sigma = 30 / 3）。
+  static const _regularSigma = 10.0;
+
   double _radius;
   GlassMaterial _material;
   double _dpr;
@@ -71,7 +75,6 @@ class RenderLiquidGlass extends RenderProxyBox {
   bool _checkScheduled = false;
   ui.FragmentShader? _shader;
   final _clip = LayerHandle<ClipRectLayer>();
-  final _blur = LayerHandle<BackdropFilterLayer>();
   final _glass = LayerHandle<BackdropFilterLayer>();
 
   set radius(double v) {
@@ -110,7 +113,6 @@ class RenderLiquidGlass extends RenderProxyBox {
   @override
   void dispose() {
     _clip.layer = null;
-    _blur.layer = null;
     _glass.layer = null;
     _shader?.dispose();
     super.dispose();
@@ -135,33 +137,31 @@ class RenderLiquidGlass extends RenderProxyBox {
     f(1); // 折射强度 100%
     f(7); // 色散
     f(0.9); // 边缘高光 90%
-    f(0); // 色调：两种材质都不再叠白色底，柔和的可读性靠更强的模糊
+    f(0); // 色调：两种材质都不再叠白色底，柔和的可读性靠模糊
     // 圆角达到短边一半（圆形、胶囊）时用正圆弧，否则用原版面板的超椭圆圆角。
     f(_radius >= size.shortestSide / 2 - 0.5 ? 2 : 5);
     f(global.dx * _dpr / _uiScale);
     f(global.dy * _dpr / _uiScale);
     f(_pad * _dpr);
 
-    void glass(PaintingContext context, Offset offset) {
-      final layer = _glass.layer ??= BackdropFilterLayer();
-      layer.filter = ui.ImageFilter.shader(shader);
-      context.pushLayer(layer, super.paint, offset);
-    }
+    // 「柔和」先模糊再交给着色器；两层合并成同一个滤镜，避免多一层背景滤镜
+    // 把着色器的坐标系换成上一层图层的坐标。
+    final filter = regular
+        ? ui.ImageFilter.compose(
+            outer: ui.ImageFilter.shader(shader),
+            inner: ui.ImageFilter.blur(sigmaX: _regularSigma, sigmaY: _regularSigma, tileMode: TileMode.clamp),
+          )
+        : ui.ImageFilter.shader(shader);
+    // 「柔和」在自己的图层里截取背景（不共享），坐标与玻璃对齐；
+    // 「清透」继续复用 [BackdropGroup] 的那次全屏截取。
+    final backdropKey = regular ? null : _backdropKey;
 
     _clip.layer = context.pushClipRect(needsCompositing, offset, (Offset.zero & size).inflate(_pad), (context, offset) {
-      if (!regular) {
-        // 「清透」原版只有半径 1 的模糊，肉眼不可见，省去这一层。
-        _blur.layer = null;
-        glass(context, offset);
-        return;
-      }
-      // 「柔和」：去掉白色底后靠模糊保证可读性，模糊半径由原版 16 提到 30（sigma = 30 / 3）。
-      // 原版以 1 倍屏像素设计，这里按逻辑像素换算；clamp 比 mirror / repeated 更省。
-      final blur = _blur.layer ??= BackdropFilterLayer();
-      blur
-        ..filter = ui.ImageFilter.blur(sigmaX: 30 / 3, sigmaY: 30 / 3, tileMode: TileMode.clamp)
-        ..backdropKey = _backdropKey;
-      context.pushLayer(blur, glass, offset);
+      final layer = _glass.layer ??= BackdropFilterLayer();
+      layer
+        ..filter = filter
+        ..backdropKey = backdropKey;
+      context.pushLayer(layer, super.paint, offset);
     }, oldLayer: _clip.layer);
   }
 

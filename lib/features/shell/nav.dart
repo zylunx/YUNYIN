@@ -141,8 +141,8 @@ class LxSearchRoute extends AppRoute {
   String get sideKey => 'settings';
 }
 
-/// LX 音源管理（设置的二级页面）。
-class LxSourcesRoute extends AppRoute {
+/// 音源管理与选择（设置的二级页面）。
+class SourcesRoute extends AppRoute {
   @override
   Chrome get chrome => Chrome.navOnly;
 

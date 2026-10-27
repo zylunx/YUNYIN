@@ -5,14 +5,27 @@ import 'lx_engine.dart';
 
 /// 把通用 LX 引擎包装成一个 [MusicSource]，供播放器在“换音源”或“官方源失败兜底”时调用。
 ///
-/// 它本身不是目录源（不提供搜索/歌单），故 [selectable] 为 false；播放器通过
-/// 把歌曲的 [Song.sourceId] 设为 `lx:<platform>` 来指定用哪个平台解析。
+/// 它本身不是目录源（不提供搜索/歌单），故 [selectable] 为 false；用户选中的
+/// LX 源由 [LxSourceManager] 记录为主音源，播放器通过把歌曲的
+/// [Song.sourceId] 设为 `lx:<platform>` 来指定用哪个平台解析。
 class LxSource extends MusicSource {
   LxSource(this.manager);
 
   static const sourceId = 'lx';
 
   final LxSourceManager manager;
+
+  @override
+  Future<void> init() async {
+    // 导入 / 删除 / 启停 / 切换主源时同步通知 SourceManager 刷新界面与路由。
+    manager.addListener(notifyListeners);
+  }
+
+  @override
+  void dispose() {
+    manager.removeListener(notifyListeners);
+    super.dispose();
+  }
 
   @override
   String get id => sourceId;

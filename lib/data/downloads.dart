@@ -76,8 +76,9 @@ class DownloadManager extends ChangeNotifier {
   /// 下载歌曲；返回 false 表示无可用下载地址。
   Future<bool> download(Song song) async {
     if (!supported || isDownloaded(song) || progress.containsKey(song.key)) return true;
-    final source = sources.byId(song.sourceId);
-    final info = await source.stream(song, settings.downloadQuality);
+    final resolved = sources.songForPlayback(song);
+    final source = sources.byId(resolved.sourceId);
+    final info = await source.stream(resolved, settings.downloadQuality);
     if (info.url == null) return false;
     final folder = Directory(await dir());
     await folder.create(recursive: true);
